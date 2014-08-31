@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"sync"
+	"time"
 
 	log "github.com/golang/glog"
 
@@ -47,7 +48,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	//go d.Run()
+	go d.Run()
+	time.Sleep(3 * time.Second) //TODO: remove after adding ticks again
 
 	var remainingDownloadsWg sync.WaitGroup
 	filesToDownload := make(chan dht.InfoHash)
@@ -111,21 +113,21 @@ func downloadManager(d *dht.DHT, filesToDownload chan dht.InfoHash, remainingDow
 		case newFile := <-filesToDownload:
 			if _, ok := currentDownloads[newFile]; ok {
 				log.V(1).Infof("WINSTON: File %x is already downloading, skipping...\n", newFile)
-			} else {
-				log.V(1).Infof("WINSTON: Accepted %x for download...\n", newFile)
-
-				// Create a channel for all the found peers
-				currentDownloads[newFile] = make(chan []string)
-
-				bufferedPeerChannel := makePeerBuffer(currentDownloads[newFile])
-
-				// Ask that nice DHT fellow to find those peers :)
-				d.PeersRequest(string(newFile), false)
-
-				// Create a new gorouite that manages the download for the specific file
-				go downloadFile(newFile, bufferedPeerChannel, downloadEvents)
-
+				continue
 			}
+			log.V(1).Infof("WINSTON: Accepted %x for download...\n", newFile)
+
+			// Create a channel for all the found peers
+			currentDownloads[newFile] = make(chan []string)
+
+			bufferedPeerChannel := makePeerBuffer(currentDownloads[newFile])
+
+			// Ask that nice DHT fellow to find those peers :)
+			d.PeersRequest(string(newFile), false)
+
+			// Create a new gorouite that manages the download for the specific file
+			go downloadFile(newFile, bufferedPeerChannel, downloadEvents)
+
 		case newEvent := <-downloadEvents:
 			if newEvent.eventType == eventSucessfulDownload {
 				log.V(1).Infof("WINSTON: Download of %x completed :)\n", newEvent.infoHash)
@@ -135,7 +137,23 @@ func downloadManager(d *dht.DHT, filesToDownload chan dht.InfoHash, remainingDow
 			close(currentDownloads[newEvent.infoHash])
 			delete(currentDownloads, newEvent.infoHash)
 
-			//TODO: case receive peers
+		case newPeers, chanOk := <-d.PeersRequestResults:
+			if !chanOk {
+				// Something went wrong, mayday, mayday!
+				log.Errorf("WINSTON: BORK!\n")
+				os.Exit(1)
+			}
+
+			//log.V(1).Infof("WINSTON: NEW PEERS %#v %#v\n", okc, newPeers)
+			for ih, peers := range newPeers {
+				// Check if download is still active
+				if currentPeersChan, ok := currentDownloads[ih]; ok {
+					log.V(1).Infof("WINSTON: Received %d new peers for file %x\n", len(peers), ih)
+					currentPeersChan <- peers
+				} else {
+					log.V(1).Infof("WINSTON: Received %d peers for non-current file %x (probably completed or timed out)\n", len(peers), ih)
+				}
+			}
 		}
 	}
 }
@@ -143,6 +161,10 @@ func downloadManager(d *dht.DHT, filesToDownload chan dht.InfoHash, remainingDow
 func downloadFile(infoHash dht.InfoHash, peerChannel chan string, eventsChannel chan downloadEvent) {
 	//TODO:implement
 	//TODO: get peers from buffered channel, connect to them, download torrent file
+	count := 0
+	for newPeer := range peerChannel {
+		log.V(2).Infof("WINSTON: Peer #%d received for torrent %x: %v\n", count, infoHash, dht.DecodePeerAddress(newPeer))
+	}
 }
 
 /*
