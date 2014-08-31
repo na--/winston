@@ -71,7 +71,7 @@ func makePeerBuffer(in <-chan []string) chan string {
 
 	go func() {
 		defer close(out)
-		bufferedPeers := make([]string, 5)
+		var bufferedPeers []string
 
 		// Get a group of peers and then try to pass them ony by one to "out" channgel.
 		// If more are received meanwhile, add them to the slice :)
@@ -163,7 +163,9 @@ func downloadFile(infoHash dht.InfoHash, peerChannel chan string, eventsChannel 
 	//TODO: get peers from buffered channel, connect to them, download torrent file
 	count := 0
 	for newPeer := range peerChannel {
-		log.V(2).Infof("WINSTON: Peer #%d received for torrent %x: %v\n", count, infoHash, dht.DecodePeerAddress(newPeer))
+		count++
+		log.V(2).Infof("WINSTON: Peer #%d received for torrent %x: %s\n", count, infoHash, dht.DecodePeerAddress(newPeer))
+		time.Sleep(2 * time.Second) //TODO: remove
 	}
 }
 
