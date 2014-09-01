@@ -24,22 +24,23 @@ type downloadEvent struct {
 }
 
 func main() {
+	var showHelp bool
+	flag.BoolVar(&showHelp, "h", false, "Show help message")
 	flag.Parse()
 
-	// To see logs, use the -logtostderr flag and change the verbosity with
-	// -v 0 (less verbose) up to -v 5 (more verbose).
-	if len(flag.Args()) != 1 {
-		log.Errorf("Usage: %v <infohash>\n\n", os.Args[0])
+	if showHelp {
+		log.Errorf("Usage: %v\n\n", os.Args[0])
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
 
-	// Parses the infohash from the commandline
-	infoHash, err := dht.DecodeInfoHash(flag.Args()[0])
-	if err != nil {
-		log.Errorf("WINSTON: DecodeInfoHash error: %v\n", err)
-		os.Exit(1)
-	}
+	// To see logs, use the -logtostderr flag and change the verbosity with
+	// -v 0 (less verbose) up to -v 5 (more verbose).
+
+	infoHashList := [3]string{
+		"4d753474429d817b80ff9e0c441ca660ec5d2450",
+		"7a1073bc39e6b0b01e3730227b8ffea6aeac5d59",
+		"757b25d9681d493167b8d3759dbfddc983e80646"}
 
 	// Starts a DHT node with the default options. It picks a random UDP port. To change this, see dht.NewConfig.
 	d, err := dht.New(nil)
@@ -53,15 +54,19 @@ func main() {
 
 	var remainingDownloadsWg sync.WaitGroup
 	filesToDownload := make(chan dht.InfoHash)
-
 	go downloadManager(d, filesToDownload, &remainingDownloadsWg)
 
-	//TODO: run this for every unresolved infohash (with throtling of course)
-	remainingDownloadsWg.Add(1)
-	filesToDownload <- infoHash
+	for _, infoHashString := range infoHashList {
+		infoHash, err := dht.DecodeInfoHash(infoHashString)
+		if err != nil {
+			log.Errorf("WINSTON: DecodeInfoHash error: %v\n", err)
+			os.Exit(1)
+		}
 
-	remainingDownloadsWg.Add(1)
-	filesToDownload <- infoHash
+		remainingDownloadsWg.Add(1)
+		filesToDownload <- infoHash
+
+	}
 
 	remainingDownloadsWg.Wait()
 }
@@ -167,6 +172,7 @@ func downloadFile(infoHash dht.InfoHash, peerChannel chan string, eventsChannel 
 		log.V(2).Infof("WINSTON: Peer #%d received for torrent %x: %s\n", count, infoHash, dht.DecodePeerAddress(newPeer))
 		time.Sleep(2 * time.Second) //TODO: remove
 	}
+
 }
 
 /*
@@ -203,11 +209,4 @@ func downloadTorrent(d *dht.DHT, infoHash dht.InfoHash) {
 	}
 }
 
-func connectToPeers(n *dht.DHT, infoHash dht.InfoHash, torrentDownloaded chan bool) {
-	for r := range n.PeersRequestResults {
-		for foundHash, foundPeers := range r {
-			log.V(1).Infof("WINSTON: FOUND PEERS FOR '%x': %#v\n", foundHash, foundPeers)
-		}
-	}
-}
 */
