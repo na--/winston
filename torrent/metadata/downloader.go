@@ -5,6 +5,7 @@ package metadata
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/na--/winston/torrent/peer"
@@ -39,7 +40,8 @@ func StartNewDownloadManager() (chan<- string, <-chan bool) {
 	}
 
 	go d.Run()
-	time.Sleep(5 * time.Second) //TODO: this seems to be necessary; remove after investigating the DHT lib
+
+	time.Sleep(7 * time.Second) //TODO: this seems to be necessary; remove after investigating the DHT lib
 
 	filesToDownload := make(chan string)
 	finished := make(chan bool)
@@ -82,9 +84,9 @@ func downloadManager(d *dht.DHT, filesToDownload <-chan string, finished chan<- 
 
 		case newEvent := <-downloadEvents:
 			if newEvent.eventType == eventSucessfulDownload {
-				log.V(2).Infof("WINSTON: Download of %x completed :)\n", newEvent.infoHash)
+				log.V(1).Infof("WINSTON: Download of %x completed :)\n", newEvent.infoHash)
 			} else if newEvent.eventType == eventTimeout {
-				log.V(2).Infof("WINSTON: Download of %x failed: time out :(\n", newEvent.infoHash)
+				log.V(1).Infof("WINSTON: Download of %x failed: time out :(\n", newEvent.infoHash)
 			}
 			close(currentDownloads[newEvent.infoHash])
 			delete(currentDownloads, newEvent.infoHash)
@@ -115,9 +117,9 @@ func downloadFile(infoHash dht.InfoHash, peerChannel <-chan string, eventsChanne
 	//TODO: implement
 	//TODO: get peers from buffered channel, connect to them, download torrent file
 	//TODO: add some sure way to detect goroutine finished (defer send to channel?)
-	count := 0
+	peerCount := 0
 	tick := time.Tick(10 * time.Second)
-	timeout := time.After(120 * time.Second)
+	timeout := time.After(5 * time.Minute)
 
 	for {
 		select {
@@ -126,9 +128,16 @@ func downloadFile(infoHash dht.InfoHash, peerChannel <-chan string, eventsChanne
 				log.V(2).Infof("WINSTON: Peer channel for %x was closed, probably by torrent timeout. Killing download goroutine...\n", infoHash)
 				return
 			}
-			count++
-			log.V(3).Infof("WINSTON: Peer #%d received for torrent %x: %s\n", count, infoHash, dht.DecodePeerAddress(newPeer))
-			peer.DownloadMetadataFromPeer(dht.DecodePeerAddress(newPeer), string(infoHash))
+
+			peerCount++
+			peerStr := dht.DecodePeerAddress(newPeer)
+			if strings.HasSuffix(peerStr, ":1") {
+				log.V(3).Infof("WINSTON: Skipping peer #%d for torrent %x for looking fake: %s\n", peerCount, infoHash, peerStr)
+				continue
+			}
+
+			log.V(3).Infof("WINSTON: Peer #%d received for torrent %x: %s\n", peerCount, infoHash, peerStr)
+			peer.DownloadMetadataFromPeer(peerStr, string(infoHash))
 
 			//time.Sleep(30 * time.Second)                           //TODO: remove after debugging
 			//eventsChannel <- downloadEvent{infoHash, eventTimeout} //TODO: remove after debugging
