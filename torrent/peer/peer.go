@@ -6,10 +6,12 @@
 package peer
 
 import (
-	"bytes"
+	"fmt"
 	"math/rand"
+	"net"
 	"os"
 	"strconv"
+	"time"
 
 	log "github.com/golang/glog"
 )
@@ -28,10 +30,6 @@ func getNewPeerID() string {
 	return sid[0:20]
 }
 
-func string2Bytes(s string) []byte {
-	return bytes.NewBufferString(s).Bytes()
-}
-
 func getSessionHeader(infoHash string, peerID string) []byte {
 	header := make([]byte, 68)
 	copy(header, bitTorrentHeader[0:])
@@ -43,14 +41,72 @@ func getSessionHeader(infoHash string, peerID string) []byte {
 	return header
 }
 
+func readHeader(conn net.Conn) (h []byte, err error) {
+	header := make([]byte, 68)
+	_, err = conn.Read(header[0:1])
+	if err != nil {
+		err = fmt.Errorf("Couldn't read 1st byte: %v", err)
+		return
+	}
+	if header[0] != 19 {
+		err = fmt.Errorf("First byte is not 19")
+		return
+	}
+	_, err = conn.Read(header[1:20])
+	if err != nil {
+		err = fmt.Errorf("Couldn't read magic string: %v", err)
+		return
+	}
+	if string(header[1:20]) != "BitTorrent protocol" {
+		err = fmt.Errorf("Magic string is not correct: %v", string(header[1:20]))
+		return
+	}
+	// Read rest of header
+	_, err = conn.Read(header[20:])
+	if err != nil {
+		err = fmt.Errorf("Couldn't read rest of header")
+		return
+	}
+
+	h = make([]byte, 48)
+	copy(h, header[20:])
+	return
+}
+
 // DownloadMetadataFromPeer is used to connect to the specified peer
 // and download the torrent metadata for the specified infoHash from them
 func DownloadMetadataFromPeer(peer string, infoHash string) {
 	peerID := getNewPeerID()
+	sessionHader := getSessionHeader(infoHash, peerID)
 
 	log.V(2).Infof("WINSTON: ============================================\n")
 	log.V(2).Infof("WINSTON: Connecting to %s for torrent %x...\n", peer, infoHash)
 	log.V(2).Infof("WINSTON: Peer id %s...\n", peerID)
-	log.V(2).Infof("WINSTON: Header %s...\n", getSessionHeader(infoHash, peerID))
-	log.V(2).Infof("WINSTON: ============================================\n")
+	log.V(2).Infof("WINSTON: Header %s...\n", sessionHader)
+	defer log.V(2).Infof("WINSTON: ============================================\n")
+
+	conn, err := net.DialTimeout("tcp", peer, 10*time.Second)
+	if err != nil {
+		log.V(2).Infof("WINSTON: Could not connect to peer %s: '%s'\n", peer, err)
+		return
+	}
+	log.V(2).Infof("WINSTON: Connected to peer %s!\n", peer)
+
+	_, err = conn.Write(sessionHader)
+	if err != nil {
+		log.V(2).Infof("WINSTON: Failed to send header to peer %s :(\n", peer)
+		return
+	}
+
+	theirheader, err := readHeader(conn)
+	if err != nil {
+		log.V(2).Infof("WINSTON: Error reading header for peer %s : '%s'\n", peer, err)
+		return
+	}
+
+	peersInfoHash := string(theirheader[8:28])
+	id := string(theirheader[28:48])
+
+	log.V(2).Infof("WINSTON: Success!!! Remote peer is '%s' with id '%s'\n", peersInfoHash, id)
+	os.Exit(1)
 }

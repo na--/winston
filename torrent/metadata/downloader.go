@@ -64,10 +64,10 @@ func downloadManager(d *dht.DHT, filesToDownload <-chan string, finished chan<- 
 			}
 
 			if _, ok := currentDownloads[newFile]; ok {
-				log.V(1).Infof("WINSTON: File %x is already downloading, skipping...\n", newFile)
+				log.V(3).Infof("WINSTON: File %x is already downloading, skipping...\n", newFile)
 				continue
 			}
-			log.V(1).Infof("WINSTON: Accepted %x for download...\n", newFile)
+			log.V(3).Infof("WINSTON: Accepted %x for download...\n", newFile)
 
 			// Create a channel for all the found peers
 			currentDownloads[newFile] = make(chan []string)
@@ -82,9 +82,9 @@ func downloadManager(d *dht.DHT, filesToDownload <-chan string, finished chan<- 
 
 		case newEvent := <-downloadEvents:
 			if newEvent.eventType == eventSucessfulDownload {
-				log.V(1).Infof("WINSTON: Download of %x completed :)\n", newEvent.infoHash)
+				log.V(2).Infof("WINSTON: Download of %x completed :)\n", newEvent.infoHash)
 			} else if newEvent.eventType == eventTimeout {
-				log.V(1).Infof("WINSTON: Download of %x failed: time out :(\n", newEvent.infoHash)
+				log.V(2).Infof("WINSTON: Download of %x failed: time out :(\n", newEvent.infoHash)
 			}
 			close(currentDownloads[newEvent.infoHash])
 			delete(currentDownloads, newEvent.infoHash)
@@ -101,10 +101,10 @@ func downloadManager(d *dht.DHT, filesToDownload <-chan string, finished chan<- 
 			for ih, peers := range newPeers {
 				// Check if download is still active
 				if currentPeersChan, ok := currentDownloads[ih]; ok {
-					log.V(1).Infof("WINSTON: Received %d new peers for file %x\n", len(peers), ih)
+					log.V(3).Infof("WINSTON: Received %d new peers for file %x\n", len(peers), ih)
 					currentPeersChan <- peers
 				} else {
-					log.V(1).Infof("WINSTON: Received %d peers for non-current file %x (probably completed or timed out)\n", len(peers), ih)
+					log.V(3).Infof("WINSTON: Received %d peers for non-current file %x (probably completed or timed out)\n", len(peers), ih)
 				}
 			}
 		}
@@ -117,7 +117,7 @@ func downloadFile(infoHash dht.InfoHash, peerChannel <-chan string, eventsChanne
 	//TODO: add some sure way to detect goroutine finished (defer send to channel?)
 	count := 0
 	tick := time.Tick(10 * time.Second)
-	timeout := time.After(60 * time.Second)
+	timeout := time.After(120 * time.Second)
 
 	for {
 		select {
@@ -127,18 +127,18 @@ func downloadFile(infoHash dht.InfoHash, peerChannel <-chan string, eventsChanne
 				return
 			}
 			count++
-			log.V(2).Infof("WINSTON: Peer #%d received for torrent %x: %s\n", count, infoHash, dht.DecodePeerAddress(newPeer))
+			log.V(3).Infof("WINSTON: Peer #%d received for torrent %x: %s\n", count, infoHash, dht.DecodePeerAddress(newPeer))
 			peer.DownloadMetadataFromPeer(dht.DecodePeerAddress(newPeer), string(infoHash))
 
-			time.Sleep(30 * time.Second)                           //TODO: remove after debugging
-			eventsChannel <- downloadEvent{infoHash, eventTimeout} //TODO: remove after debugging
-			return                                                 //TODO: remove after debugging
+			//time.Sleep(30 * time.Second)                           //TODO: remove after debugging
+			//eventsChannel <- downloadEvent{infoHash, eventTimeout} //TODO: remove after debugging
+			//return                                                 //TODO: remove after debugging
 
 		case <-tick:
-			log.V(2).Infof("WINSTON: Tick-tack %x...\n", infoHash)
+			log.V(3).Infof("WINSTON: Tick-tack %x...\n", infoHash)
 
 		case <-timeout:
-			log.V(2).Infof("WINSTON: Torrent %x timed out...\n", infoHash)
+			log.V(3).Infof("WINSTON: Torrent %x timed out...\n", infoHash)
 			eventsChannel <- downloadEvent{infoHash, eventTimeout}
 			return
 		}
