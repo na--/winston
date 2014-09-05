@@ -39,7 +39,7 @@ func StartNewDownloadManager() (filesToDownload chan string, finished chan bool)
 	}
 
 	go d.Run()
-	time.Sleep(5 * time.Second) //TODO: this is necessary; remove after investigating the DHT lib
+	time.Sleep(5 * time.Second) //TODO: this seems to be necessary; remove after investigating the DHT lib
 
 	filesToDownload = make(chan string)
 	finished = make(chan bool)
@@ -47,44 +47,6 @@ func StartNewDownloadManager() (filesToDownload chan string, finished chan bool)
 	go downloadManager(d, filesToDownload, finished)
 
 	return filesToDownload, finished
-}
-
-func makePeerBuffer(in <-chan []string) chan string {
-	out := make(chan string)
-
-	go func() {
-		defer close(out)
-		var bufferedPeers []string
-
-		// Get a group of peers and then try to pass them ony by one to "out" channgel.
-		// If more are received meanwhile, add them to the slice :)
-		for chunkOfPeers := range in {
-			bufferedPeers = append(bufferedPeers, chunkOfPeers...)
-		loop:
-			for {
-				select {
-				case anotherChunkOfPeers, ok := <-in: // More peers are received before they can be processed by the receiver
-					if !ok {
-						// Channel was closed (successful download or timeout)
-						return
-					}
-					// Buffer the newly received peers
-					bufferedPeers = append(bufferedPeers, anotherChunkOfPeers...) //TODO: consider a maximum size for the buffer?
-
-				case out <- bufferedPeers[0]: // Receiver consumed the first buffered peer
-
-					bufferedPeers = bufferedPeers[1:] // TODO: check for possible memory leak?
-
-					// If no more peers are in the buffer, go back to the beginning to fill up the tank
-					if len(bufferedPeers) == 0 {
-						break loop
-					}
-				}
-			}
-		}
-	}()
-
-	return out
 }
 
 func downloadManager(d *dht.DHT, filesToDownload chan string, finished chan bool) {
@@ -168,7 +130,7 @@ func downloadFile(infoHash dht.InfoHash, peerChannel chan string, eventsChannel 
 			log.V(2).Infof("WINSTON: Peer #%d received for torrent %x: %s\n", count, infoHash, dht.DecodePeerAddress(newPeer))
 			peer.DownloadMetadataFromPeer(dht.DecodePeerAddress(newPeer), string(infoHash))
 
-			time.Sleep(15 * time.Second)                           //TODO: remove after debugging
+			time.Sleep(30 * time.Second)                           //TODO: remove after debugging
 			eventsChannel <- downloadEvent{infoHash, eventTimeout} //TODO: remove after debugging
 			return                                                 //TODO: remove after debugging
 
