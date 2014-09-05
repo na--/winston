@@ -3,7 +3,7 @@
 // Most of the code in this file is copied from or heavily influenced by Taipei-Torrent: https://github.com/jackpal/Taipei-Torrent
 // Taipei-Torrent is copyrighted (c) Jack Palevich and others: https://github.com/jackpal/Taipei-Torrent/graphs/contributors
 
-package peerconnector
+package peer
 
 import (
 	"bytes"
