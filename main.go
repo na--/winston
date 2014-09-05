@@ -36,9 +36,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	infoHashList := [3]string{
-		"4d753474429d817b80ff9e0c441ca660ec5d2450",
-		"7a1073bc39e6b0b01e3730227b8ffea6aeac5d59",
+	infoHashList := [1]string{
+		//"4d753474429d817b80ff9e0c441ca660ec5d2450",
+		//"7a1073bc39e6b0b01e3730227b8ffea6aeac5d59",
 		"757b25d9681d493167b8d3759dbfddc983e80646"}
 
 	// Starts a DHT node with the default options. It picks a random UDP port. To change this, see dht.NewConfig.
@@ -149,7 +149,6 @@ func downloadManager(d *dht.DHT, filesToDownload chan dht.InfoHash, remainingDow
 				os.Exit(1)
 			}
 
-			//log.V(1).Infof("WINSTON: NEW PEERS %#v %#v\n", okc, newPeers)
 			for ih, peers := range newPeers {
 				// Check if download is still active
 				if currentPeersChan, ok := currentDownloads[ih]; ok {
@@ -166,9 +165,10 @@ func downloadManager(d *dht.DHT, filesToDownload chan dht.InfoHash, remainingDow
 func downloadFile(infoHash dht.InfoHash, peerChannel chan string, eventsChannel chan downloadEvent) {
 	//TODO:implement
 	//TODO: get peers from buffered channel, connect to them, download torrent file
+	//TODO: add some sure way to detect goroutine finished (defer send to channel?)
 	count := 0
-	//tick := time.Tick(15 * time.Second)
-	timeout := time.After(10 * time.Second)
+	tick := time.Tick(10 * time.Second)
+	timeout := time.After(60 * time.Second)
 
 	for {
 		select {
@@ -179,7 +179,14 @@ func downloadFile(infoHash dht.InfoHash, peerChannel chan string, eventsChannel 
 			}
 			count++
 			log.V(2).Infof("WINSTON: Peer #%d received for torrent %x: %s\n", count, infoHash, dht.DecodePeerAddress(newPeer))
-			time.Sleep(1 * time.Second) //TODO: remove
+			peer.DownloadMetadataFromPeer(dht.DecodePeerAddress(newPeer), string(infoHash))
+
+			time.Sleep(30 * time.Second) //TODO: remove
+			eventsChannel <- downloadEvent{infoHash, eventTimeout}
+			return
+
+		case <-tick:
+			log.V(2).Infof("WINSTON: Tick-tack %...\n", infoHash)
 
 		case <-timeout:
 			log.V(2).Infof("WINSTON: Torrent %x timed out...\n", infoHash)
@@ -188,36 +195,3 @@ func downloadFile(infoHash dht.InfoHash, peerChannel chan string, eventsChannel 
 		}
 	}
 }
-
-/*
-func downloadTorrent(d *dht.DHT, infoHash dht.InfoHash) {
-	defer wg.Done()
-
-	// This channel will be used to signal when the file is downloaded
-	torrentDownloaded := make(chan bool)
-
-
-	// Launch the gorouitine that will contact peers and try to download the file
-	go connectToPeers(d, infoHash, torrentDownloaded)
-
-	for {
-		select {
-		case <-torrentDownloaded:
-			log.V(1).Infof("WINSTON: Torrent '%x' was successfully downloaded!!!\n", infoHash)
-			return
-
-		case <-timeout:
-			log.V(1).Infof("WINSTON: Could not download torrent '%x': timed out\n", infoHash)
-			os.Exit(0)
-			return
-
-		case <-tick:
-			// Repeat the request until a result appears, querying nodes that haven't been
-			// consulted before and finding close-by candidates for the infohash.
-			//log.V(1).Info("WINSTON: tick\n")
-			d.PeersRequest(string(infoHash), false)
-		}
-	}
-}
-
-*/
