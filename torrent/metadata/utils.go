@@ -2,8 +2,8 @@ package metadata
 
 // This function accepts found peers in bulk through the in channel, buffers them
 // and passes them one by one to the out channel
-func makePeerBuffer(in <-chan []string) (out chan string) {
-	out = make(chan string)
+func makePeerBuffer(in <-chan []string) <-chan string {
+	out := make(chan string)
 
 	go func() {
 		defer close(out)

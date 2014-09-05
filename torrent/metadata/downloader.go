@@ -30,7 +30,7 @@ type downloadEvent struct {
 // The first is used to pass torrent infohashes to the downloader;
 // The second is used by the downloader to signal when all the requested torrents
 // have been downloaded or have timed out.
-func StartNewDownloadManager() (filesToDownload chan string, finished chan bool) {
+func StartNewDownloadManager() (chan<- string, <-chan bool) {
 	// Starts a DHT node with the default options, picks a random UDP port.
 	d, err := dht.New(nil)
 	if err != nil {
@@ -41,15 +41,15 @@ func StartNewDownloadManager() (filesToDownload chan string, finished chan bool)
 	go d.Run()
 	time.Sleep(5 * time.Second) //TODO: this seems to be necessary; remove after investigating the DHT lib
 
-	filesToDownload = make(chan string)
-	finished = make(chan bool)
+	filesToDownload := make(chan string)
+	finished := make(chan bool)
 
 	go downloadManager(d, filesToDownload, finished)
 
 	return filesToDownload, finished
 }
 
-func downloadManager(d *dht.DHT, filesToDownload chan string, finished chan bool) {
+func downloadManager(d *dht.DHT, filesToDownload <-chan string, finished chan<- bool) {
 	currentDownloads := make(map[dht.InfoHash]chan []string)
 	downloadEvents := make(chan downloadEvent)
 
@@ -58,6 +58,7 @@ func downloadManager(d *dht.DHT, filesToDownload chan string, finished chan bool
 		case newInfoHashString := <-filesToDownload:
 			newFile, err := dht.DecodeInfoHash(newInfoHashString)
 			if err != nil {
+				//TODO: better error handling
 				log.Errorf("WINSTON: DecodeInfoHash error: %v\n", err)
 				os.Exit(1)
 			}
@@ -94,8 +95,7 @@ func downloadManager(d *dht.DHT, filesToDownload chan string, finished chan bool
 		case newPeers, chanOk := <-d.PeersRequestResults:
 			if !chanOk {
 				// Something went wrong, mayday, mayday!
-				log.Errorf("WINSTON: BORK!\n")
-				os.Exit(1)
+				panic("WINSTON: BORK!\n")
 			}
 
 			for ih, peers := range newPeers {
@@ -111,7 +111,7 @@ func downloadManager(d *dht.DHT, filesToDownload chan string, finished chan bool
 	}
 }
 
-func downloadFile(infoHash dht.InfoHash, peerChannel chan string, eventsChannel chan downloadEvent) {
+func downloadFile(infoHash dht.InfoHash, peerChannel <-chan string, eventsChannel chan<- downloadEvent) {
 	//TODO: implement
 	//TODO: get peers from buffered channel, connect to them, download torrent file
 	//TODO: add some sure way to detect goroutine finished (defer send to channel?)
