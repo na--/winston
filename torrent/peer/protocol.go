@@ -17,6 +17,17 @@ import (
 	log "github.com/golang/glog"
 )
 
+type extensionHandshake struct {
+	M            map[string]int `bencode:"m"`
+	P            uint16         `bencode:"p"`
+	V            string         `bencode:"v"`
+	Yourip       string         `bencode:"yourip"`
+	Ipv6         string         `bencode:"ipv6"`
+	Ipv4         string         `bencode:"ipv4"`
+	Reqq         uint16         `bencode:"reqq"`
+	MetadataSize uint           `bencode:"metadata_size"`
+}
+
 func getNewPeerID() string {
 	sid := "-md" + strconv.Itoa(os.Getpid()) + "_" + strconv.FormatInt(rand.Int63(), 10)
 	return sid[0:20]
@@ -126,6 +137,27 @@ func initiateConnectionToPeer(remotePeer, ourPeerID, wantedInfoHash string) (con
 
 	if int(theirFlags[5])&0x10 != 0x10 {
 		err = fmt.Errorf("Remote torrent client does not support the extension protocol; flags are %x", theirFlags)
+		return
+	}
+
+	return
+}
+
+func parseExtensionHandshake(msg []byte) (result extensionHandshake, err error) {
+
+	err = bencode.Unmarshal(bytes.NewReader(msg), &result)
+	if err != nil {
+		err = fmt.Errorf("Error when unmarshaling extension handshake (%s)", err)
+		return
+	}
+
+	if _, ok := result.M["ut_metadata"]; !ok {
+		err = fmt.Errorf("Metadata extension is not supported; only supported %v", result.M)
+		return
+	}
+
+	if result.MetadataSize <= 0 {
+		err = fmt.Errorf("Metadata size is %d", result.MetadataSize)
 		return
 	}
 

@@ -111,28 +111,47 @@ func DownloadMetadataFromPeer(remotePeer, infoHash string) {
 	// Send the BEP10 handshake message
 	writeChan <- getExtensionsHandshakeMsg()
 
+	var theirExtensionHandshake extensionHandshake
+
 	for {
 		select {
 		case newMessage, chanOk := <-readChan:
 			if !chanOk {
 				log.V(2).Infof("WINSTON (peer %s): Reader channel unexpectedly closed!\n", ourPeerID)
+				return
 			}
 
 			log.V(3).Infof("WINSTON (peer %s): Received new message from %s: %q\n", ourPeerID, remotePeer, newMessage)
 			// Ignore every message except BEP10 extension messages
+			// TODO: handle other types of messages, if only for statistical purposes
 			if newMessage[0] != msgExtension {
 				continue
 			}
-			log.V(2).Infof("WINSTON (peer %s): Received extensions info from %s: %q\n", ourPeerID, remotePeer, newMessage)
-			//TODO: handle this
+
+			// Check if this is the handshake message for the extension protocol
+			if newMessage[1] == 0 {
+				log.V(2).Infof("WINSTON (peer %s): Received extensions handshake from %s. Parsing...\n", ourPeerID, remotePeer)
+
+				theirExtensionHandshake, err = parseExtensionHandshake(newMessage[2:])
+				if err != nil {
+					log.V(2).Infof("WINSTON (peer %s): Could not parse extensions handshake from %s (%s)\n", ourPeerID, remotePeer, err)
+					return
+				}
+				log.V(2).Infof("WINSTON (peer %s): Parsed extension message from %s: %+v\n", ourPeerID, remotePeer, theirExtensionHandshake)
+				os.Exit(1)
+
+			}
+
+			log.V(2).Infof("WINSTON (peer %s): Received other extension message from %s: %q\n", ourPeerID, remotePeer, newMessage)
+			//TODO: handle
 
 		case readErr := <-readErrors:
 			log.V(2).Infof("WINSTON (peer %s): Read error: %s\n", ourPeerID, readErr)
-			os.Exit(1) //TODO: change
+			return
 
 		case writeErr := <-writeErrors:
 			log.V(2).Infof("WINSTON (peer %s): Write error: %s\n", ourPeerID, writeErr)
-			os.Exit(1) //TODO: change
+			return
 		}
 	}
 
