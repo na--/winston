@@ -6,6 +6,7 @@
 package peer
 
 import (
+	"crypto/sha1"
 	"fmt"
 	"io"
 	"net"
@@ -111,7 +112,7 @@ func DownloadMetadataFromPeer(remotePeer, infoHash string) {
 	// Send the BEP10 handshake message
 	writeChan <- getExtensionsHandshakeMsg()
 
-	//TODO: refactor method, this is getting too long
+	//TODO: refactor method, this is getting too long and complicated
 
 	receivedHandshakeInfo := false
 	expectedMetadataPiece := 0
@@ -156,6 +157,7 @@ func DownloadMetadataFromPeer(remotePeer, infoHash string) {
 
 				// Request the first metadata piece
 				writeChan <- getMetadataRequestPieceMsg(expectedMetadataPiece, theirExtensionHandshake.M["ut_metadata"])
+				continue
 			} else if newMessage[1] != winstonExtensionUtMetadata {
 				log.V(2).Infof("WINSTON (peer %s): Received unsupported extension message from %s: %q\n", ourPeerID, remotePeer, newMessage)
 				return
@@ -166,31 +168,37 @@ func DownloadMetadataFromPeer(remotePeer, infoHash string) {
 				return
 			}
 
-			err := receiveMetadataPiece(expectedMetadataPiece, receivedMetadata, newMessage)
+			err := receiveMetadataPiece(expectedMetadataPiece, receivedMetadata, newMessage[2:])
 			if err != nil {
-				log.V(2).Infof("WINSTON (peer %s): Error receiving metadata piece from %s: %s\n", ourPeerID, remotePeer, err)
+				log.V(2).Infof("WINSTON (peer %s): Error receiving metadata piece %d of %d: %s\n", ourPeerID, expectedMetadataPiece+1, totalPieces+1, err)
 				return
 			}
-			log.V(2).Infof("WINSTON (peer %s): Successfully received piece %d of %d!\n", ourPeerID, expectedMetadataPiece+1, totalPieces+1)
+			log.V(2).Infof("WINSTON (peer %s): Successfully received piece %d of %d for %x from %s!\n", ourPeerID, expectedMetadataPiece+1, totalPieces+1, infoHash, remotePeer)
 
 			if expectedMetadataPiece == totalPieces {
-				//TODO: verify torrent hash
-				//if exact, return torrent
-				//if not, kill goroutine
-			} else {
-				// Request the next metadata piece
-				expectedMetadataPiece++
-				writeChan <- getMetadataRequestPieceMsg(0, theirExtensionHandshake.M["ut_metadata"])
+				sha := sha1.New()
+				sha.Write(receivedMetadata)
+				actualHash := string(sha.Sum(nil))
+				if actualHash != infoHash {
+					log.V(2).Infof("WINSTON (peer %s): Received invalid metadata from %s: received %x, expected %x\n", ourPeerID, remotePeer, actualHash, infoHash)
+					os.Exit(1) //TODO: remove
+				} else {
+					log.V(1).Infof("WINSTON (peer %s): SUCCESSFULLY DOWNLOADED %x from %s\n", ourPeerID, infoHash, remotePeer)
+					os.Exit(1) //TODO: remove
+				}
+				return
 			}
+
+			// Request the next metadata piece
+			expectedMetadataPiece++
+			writeChan <- getMetadataRequestPieceMsg(expectedMetadataPiece, theirExtensionHandshake.M["ut_metadata"])
 
 		case readErr := <-readErrors:
 			log.V(2).Infof("WINSTON (peer %s): Read error: %s\n", ourPeerID, readErr)
-			os.Exit(1)
 			return
 
 		case writeErr := <-writeErrors:
 			log.V(2).Infof("WINSTON (peer %s): Write error: %s\n", ourPeerID, writeErr)
-			os.Exit(1)
 			return
 		}
 	}

@@ -4,8 +4,10 @@
 package peer
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"os"
@@ -184,7 +186,61 @@ func parseAndValidateExtensionHandshake(msg []byte) (result extensionHandshake, 
 	return
 }
 
-func receiveMetadataPiece(expectedMetadataPiece int, receivedMetadata, newMessage []byte) (err error) {
-	//TODO :)
+type metadataMessage struct {
+	MsgType   uint8 `bencode:"msg_type"`
+	Piece     uint  `bencode:"piece"`
+	TotalSize uint  `bencode:"total_size"`
+}
+
+func receiveMetadataPiece(expectedMetadataPiece int, receivedMetadata, msg []byte) (err error) {
+	// We need a buffered reader because the raw data is put directly
+	// after the bencoded data, and a simple reader will get all its bytes
+	// eaten. A buffered reader will keep a reference to where the
+	// bdecoding ended.
+	br := bufio.NewReader(bytes.NewReader(msg))
+	var message metadataMessage
+
+	err = bencode.Unmarshal(br, &message)
+	if err != nil {
+		err = fmt.Errorf("Error when parsing metadata (%s)", err)
+		return
+	}
+
+	if message.MsgType != extMessageMetadataData {
+		if message.MsgType == extMessageMetadataRequest {
+			err = fmt.Errorf("The remote peer tried to request metadata, this is not yet supported")
+		} else if message.MsgType == extMessageMetadataReject {
+			err = fmt.Errorf("The remote peer rejected our request for metadata... meanie :(")
+		} else {
+			err = fmt.Errorf("Unknown extension message type %q", message.MsgType)
+		}
+
+		return
+	}
+
+	if expectedMetadataPiece != int(message.Piece) {
+		err = fmt.Errorf("Expected piece %d and received piece %d", expectedMetadataPiece, message.Piece)
+		return
+	}
+
+	//TODO: optimize, this seems wasteful
+	var piece bytes.Buffer
+	_, err = io.Copy(&piece, br)
+	if err != nil {
+		err = fmt.Errorf("Could not copy metadata piece (%s)", err)
+		return
+	}
+
+	const defaultPieceSize = 16384
+	pieceStartPos := defaultPieceSize * int(message.Piece)
+	pieceSize := piece.Len()
+
+	if pieceSize > defaultPieceSize || (pieceSize != 16384 && pieceStartPos+pieceSize != len(receivedMetadata)) {
+		err = fmt.Errorf("Invalid piece size %d for piece %d", pieceSize, message.Piece)
+		return
+	}
+
+	copy(receivedMetadata[pieceStartPos:pieceStartPos+pieceSize], piece.Bytes())
+
 	return
 }
