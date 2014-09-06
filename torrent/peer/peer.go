@@ -40,6 +40,8 @@ func createPeerReader(conn net.Conn) (<-chan []byte, <-chan error) {
 	errChan := make(chan error)
 
 	go func() {
+		defer log.V(2).Infof("WINSTON: Peer reader goroutine exited\n")
+
 		defer close(msgChan)
 		defer close(errChan)
 
@@ -82,9 +84,9 @@ func createPeerWriter(conn net.Conn) (chan<- []byte, <-chan error) {
 	errChan := make(chan error)
 
 	go func() {
-		// msgChan should be closed by the calee
+		defer log.V(2).Infof("WINSTON: Peer writer goroutine exited\n")
 		defer close(errChan)
-		defer conn.Close() // If the write channel is closed, close the connection with the peer
+		// msgChan should be closed by the calee
 
 		for msg := range msgChan {
 			// Set a deadline for sending the next message and refresh it before each message
@@ -138,10 +140,10 @@ func readHeader(conn net.Conn) (h []byte, err error) {
 	return
 }
 
-func initiateConnectionToPeer(remotePeer, ourPeerID, wantedInfoHash string) (theirFlags []byte, theirInfoHash, theirPeerID string, err error) {
+func initiateConnectionToPeer(remotePeer, ourPeerID, wantedInfoHash string) (conn net.Conn, theirFlags []byte, theirInfoHash, theirPeerID string, err error) {
 	ourSessionHader := getSessionHeader(wantedInfoHash, ourPeerID)
 
-	conn, err := net.DialTimeout("tcp", remotePeer, 5*time.Second)
+	conn, err = net.DialTimeout("tcp", remotePeer, 5*time.Second)
 	if err != nil {
 		err = fmt.Errorf("Could not connect (%s)", err)
 		return
@@ -187,17 +189,37 @@ func DownloadMetadataFromPeer(remotePeer, infoHash string) {
 
 	log.V(2).Infof("WINSTON (peer %s): Connecting to %s for torrent %x\n", ourPeerID, remotePeer, infoHash)
 
-	theirFlags, theirInfoHash, theirPeerID, err := initiateConnectionToPeer(remotePeer, ourPeerID, infoHash)
+	conn, theirFlags, theirInfoHash, theirPeerID, err := initiateConnectionToPeer(remotePeer, ourPeerID, infoHash)
 	if err != nil {
 		log.V(2).Infof("WINSTON (peer %s): Error connecting to peer %s: '%s'\n", ourPeerID, remotePeer, err)
 		return
 	}
+	defer conn.Close()
+	log.V(2).Infof("WINSTON (peer %s): Connection successful! Remote peer %s is %q, has torrent '%x' and flags '%x'\n", ourPeerID, remotePeer, theirPeerID, theirInfoHash, theirFlags)
 
-	log.V(2).Infof("WINSTON (peer %s): Connection successful! Remote peer is '%q', has torrent '%x' and flags '%x'\n", ourPeerID, theirPeerID, theirInfoHash, theirFlags)
+	readChan, readErrors := createPeerReader(conn)
+	writeChan, writeErrors := createPeerWriter(conn)
+	//TODO: add keep alive ticker
+	defer close(writeChan)
+
+	for {
+		select {
+		case newMessage, chanOk := <-readChan:
+			if !chanOk {
+				log.V(2).Infof("WINSTON (peer %s): Reader channel unexpectedly closed!\n", ourPeerID)
+			}
+			log.V(2).Infof("WINSTON (peer %s): Received new message %q\n", ourPeerID, newMessage)
+		case readErr := <-readErrors:
+			log.V(2).Infof("WINSTON (peer %s): Read error: %s\n", ourPeerID, readErr)
+			os.Exit(1) //TODO: change
+		case writeErr := <-writeErrors:
+			log.V(2).Infof("WINSTON (peer %s): Write error: %s\n", ourPeerID, writeErr)
+			os.Exit(1) //TODO: change
+		}
+	}
 
 	//TODO: send extensions
 	//TODO: listen for responses
 	//TODO: send
 
-	os.Exit(1)
 }

@@ -119,7 +119,7 @@ func downloadFile(infoHash dht.InfoHash, peerChannel <-chan string, eventsChanne
 	//TODO: add some sure way to detect goroutine finished (defer send to channel?)
 	peerCount := 0
 	tick := time.Tick(10 * time.Second)
-	timeout := time.After(5 * time.Minute)
+	timeout := time.After(10 * time.Minute)
 
 	for {
 		select {
