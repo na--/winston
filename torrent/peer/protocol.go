@@ -66,7 +66,27 @@ func getExtensionsHandshakeMsg() []byte {
 	msg[1] = 0 // This is a handshake message
 	copy(msg[2:], buf.Bytes())
 
-	return buf.Bytes()
+	return msg
+}
+
+func getMetadataRequestPieceMsg(pieceNumber, theirMetadataExtensionNumber int) []byte {
+	m := map[string]int{
+		"msg_type": extMessageMetadataRequest,
+		"piece":    pieceNumber,
+	}
+
+	var raw bytes.Buffer
+	err := bencode.Marshal(&raw, m)
+	if err != nil {
+		panic("Can't you marshal a simple message, what's wrong with you?!?!")
+	}
+
+	msg := make([]byte, raw.Len()+2)
+	msg[0] = msgExtension
+	msg[1] = byte(theirMetadataExtensionNumber)
+	copy(msg[2:], raw.Bytes())
+
+	return msg
 }
 
 func readHeader(conn net.Conn) (h []byte, err error) {

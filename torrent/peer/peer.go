@@ -79,7 +79,7 @@ func createPeerWriter(conn net.Conn) (chan<- []byte, <-chan error) {
 			}
 			_, err = conn.Write(msg)
 			if err != nil {
-				errChan <- fmt.Errorf("Could not sed a  message: '%s'", err)
+				errChan <- fmt.Errorf("Could not send a message: '%s'", err)
 				break
 			}
 		}
@@ -130,6 +130,7 @@ func DownloadMetadataFromPeer(remotePeer, infoHash string) {
 
 			// Check if this is the handshake message for the extension protocol
 			if newMessage[1] == 0 {
+				//TODO: handle multiple extension handshame messages from the same peer? BEP10 allows it
 				log.V(2).Infof("WINSTON (peer %s): Received extensions handshake from %s. Parsing...\n", ourPeerID, remotePeer)
 
 				theirExtensionHandshake, err = parseExtensionHandshake(newMessage[2:])
@@ -138,25 +139,26 @@ func DownloadMetadataFromPeer(remotePeer, infoHash string) {
 					return
 				}
 				log.V(2).Infof("WINSTON (peer %s): Parsed extension message from %s: %+v\n", ourPeerID, remotePeer, theirExtensionHandshake)
-				os.Exit(1)
 
+				msgToSend := getMetadataRequestPieceMsg(0, theirExtensionHandshake.M["ut_metadata"])
+				log.V(2).Infof("WINSTON (peer %s): Sending new message %q\n", ourPeerID, msgToSend)
+
+				writeChan <- msgToSend
+
+				//os.Exit(1)
+			} else {
+				log.V(2).Infof("WINSTON (peer %s): Received other extension message from %s: %q\n", ourPeerID, remotePeer, newMessage)
+				//TODO: handle
 			}
-
-			log.V(2).Infof("WINSTON (peer %s): Received other extension message from %s: %q\n", ourPeerID, remotePeer, newMessage)
-			//TODO: handle
-
 		case readErr := <-readErrors:
 			log.V(2).Infof("WINSTON (peer %s): Read error: %s\n", ourPeerID, readErr)
+			os.Exit(1)
 			return
 
 		case writeErr := <-writeErrors:
 			log.V(2).Infof("WINSTON (peer %s): Write error: %s\n", ourPeerID, writeErr)
+			os.Exit(1)
 			return
 		}
 	}
-
-	//TODO: send extensions
-	//TODO: listen for responses
-	//TODO: send
-
 }
