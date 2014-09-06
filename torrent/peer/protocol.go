@@ -50,9 +50,9 @@ func getExtensionsHandshakeMsg() []byte {
 	//TODO: add port and other extensions
 	handshake := map[string]interface{}{
 		"m": map[string]int{
-			"ut_metadata": 1,
+			"ut_metadata": winstonExtensionUtMetadata,
 		},
-		"v": "Winston 0.01",
+		"v": "Winston 0.1",
 	}
 
 	var buf bytes.Buffer
@@ -163,7 +163,7 @@ func initiateConnectionToPeer(remotePeer, ourPeerID, wantedInfoHash string) (con
 	return
 }
 
-func parseExtensionHandshake(msg []byte) (result extensionHandshake, err error) {
+func parseAndValidateExtensionHandshake(msg []byte) (result extensionHandshake, err error) {
 
 	err = bencode.Unmarshal(bytes.NewReader(msg), &result)
 	if err != nil {
@@ -176,10 +176,15 @@ func parseExtensionHandshake(msg []byte) (result extensionHandshake, err error) 
 		return
 	}
 
-	if result.MetadataSize <= 0 {
-		err = fmt.Errorf("Metadata size is %d", result.MetadataSize)
+	if result.MetadataSize <= 0 || result.MetadataSize > 2*1024*1024 {
+		err = fmt.Errorf("Invalid metadata size %d", result.MetadataSize)
 		return
 	}
 
+	return
+}
+
+func receiveMetadataPiece(expectedMetadataPiece int, receivedMetadata, newMessage []byte) (err error) {
+	//TODO :)
 	return
 }

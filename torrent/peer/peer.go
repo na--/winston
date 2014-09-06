@@ -111,7 +111,15 @@ func DownloadMetadataFromPeer(remotePeer, infoHash string) {
 	// Send the BEP10 handshake message
 	writeChan <- getExtensionsHandshakeMsg()
 
+	//TODO: refactor method, this is getting too long
+
+	receivedHandshakeInfo := false
+	expectedMetadataPiece := 0
+
+	// These will be initialized once we receive the extension handshake
 	var theirExtensionHandshake extensionHandshake
+	var receivedMetadata []byte
+	var totalPieces int
 
 	for {
 		select {
@@ -131,25 +139,50 @@ func DownloadMetadataFromPeer(remotePeer, infoHash string) {
 			// Check if this is the handshake message for the extension protocol
 			if newMessage[1] == 0 {
 				//TODO: handle multiple extension handshame messages from the same peer? BEP10 allows it
-				log.V(2).Infof("WINSTON (peer %s): Received extensions handshake from %s. Parsing...\n", ourPeerID, remotePeer)
+				log.V(3).Infof("WINSTON (peer %s): Received extensions handshake from %s. Parsing...\n", ourPeerID, remotePeer)
 
-				theirExtensionHandshake, err = parseExtensionHandshake(newMessage[2:])
+				theirExtensionHandshake, err = parseAndValidateExtensionHandshake(newMessage[2:])
 				if err != nil {
 					log.V(2).Infof("WINSTON (peer %s): Could not parse extensions handshake from %s (%s)\n", ourPeerID, remotePeer, err)
 					return
 				}
+				receivedHandshakeInfo = true
 				log.V(2).Infof("WINSTON (peer %s): Parsed extension message from %s: %+v\n", ourPeerID, remotePeer, theirExtensionHandshake)
 
-				msgToSend := getMetadataRequestPieceMsg(0, theirExtensionHandshake.M["ut_metadata"])
-				log.V(2).Infof("WINSTON (peer %s): Sending new message %q\n", ourPeerID, msgToSend)
+				// Prepare for receiving the metadata
+				expectedMetadataPiece = 0
+				totalPieces = int(theirExtensionHandshake.MetadataSize / (16 * 1024))
+				receivedMetadata = make([]byte, theirExtensionHandshake.MetadataSize)
 
-				writeChan <- msgToSend
-
-				//os.Exit(1)
-			} else {
-				log.V(2).Infof("WINSTON (peer %s): Received other extension message from %s: %q\n", ourPeerID, remotePeer, newMessage)
-				//TODO: handle
+				// Request the first metadata piece
+				writeChan <- getMetadataRequestPieceMsg(expectedMetadataPiece, theirExtensionHandshake.M["ut_metadata"])
+			} else if newMessage[1] != winstonExtensionUtMetadata {
+				log.V(2).Infof("WINSTON (peer %s): Received unsupported extension message from %s: %q\n", ourPeerID, remotePeer, newMessage)
+				return
 			}
+
+			if !receivedHandshakeInfo {
+				log.V(2).Infof("WINSTON (peer %s): Peer %s tried to send ut_metadata message before handshake...\n", ourPeerID, remotePeer)
+				return
+			}
+
+			err := receiveMetadataPiece(expectedMetadataPiece, receivedMetadata, newMessage)
+			if err != nil {
+				log.V(2).Infof("WINSTON (peer %s): Error receiving metadata piece from %s: %s\n", ourPeerID, remotePeer, err)
+				return
+			}
+			log.V(2).Infof("WINSTON (peer %s): Successfully received piece %d of %d!\n", ourPeerID, expectedMetadataPiece+1, totalPieces+1)
+
+			if expectedMetadataPiece == totalPieces {
+				//TODO: verify torrent hash
+				//if exact, return torrent
+				//if not, kill goroutine
+			} else {
+				// Request the next metadata piece
+				expectedMetadataPiece++
+				writeChan <- getMetadataRequestPieceMsg(0, theirExtensionHandshake.M["ut_metadata"])
+			}
+
 		case readErr := <-readErrors:
 			log.V(2).Infof("WINSTON (peer %s): Read error: %s\n", ourPeerID, readErr)
 			os.Exit(1)

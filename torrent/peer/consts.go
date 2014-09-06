@@ -33,5 +33,9 @@ const (
 	extMessageMetadataReject
 )
 
+const (
+	winstonExtensionUtMetadata = 1 + iota
+)
+
 var bitTorrentHeader = []byte{'\x13', 'B', 'i', 't', 'T', 'o', 'r',
 	'r', 'e', 'n', 't', ' ', 'p', 'r', 'o', 't', 'o', 'c', 'o', 'l'}
