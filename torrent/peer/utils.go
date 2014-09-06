@@ -3,7 +3,14 @@
 
 package peer
 
-import "bytes"
+import (
+	"bytes"
+	"net"
+)
+
+func string2Bytes(s string) []byte {
+	return bytes.NewBufferString(s).Bytes()
+}
 
 func uint32ToBytes(buf []byte, n uint32) {
 	buf[0] = byte(n >> 24)
@@ -18,6 +25,19 @@ func bytesToUint32(buf []byte) uint32 {
 		(uint32(buf[2]) << 8) | uint32(buf[3])
 }
 
-func string2Bytes(s string) []byte {
-	return bytes.NewBufferString(s).Bytes()
+func netReadUint32(conn net.Conn) (n uint32, err error) {
+	var buf [4]byte
+	_, err = conn.Read(buf[0:])
+	if err != nil {
+		return
+	}
+	n = bytesToUint32(buf[0:])
+	return
+}
+
+func netWriteUint32(conn net.Conn, n uint32) (err error) {
+	buf := make([]byte, 4)
+	uint32ToBytes(buf, n)
+	_, err = conn.Write(buf[0:])
+	return
 }

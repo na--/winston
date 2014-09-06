@@ -137,11 +137,12 @@ func downloadFile(infoHash dht.InfoHash, peerChannel <-chan string, eventsChanne
 			}
 
 			log.V(3).Infof("WINSTON: Peer #%d received for torrent %x: %s\n", peerCount, infoHash, peerStr)
-			peer.DownloadMetadataFromPeer(peerStr, string(infoHash))
 
-			//time.Sleep(30 * time.Second)                           //TODO: remove after debugging
-			//eventsChannel <- downloadEvent{infoHash, eventTimeout} //TODO: remove after debugging
-			//return                                                 //TODO: remove after debugging
+			//TODO: run as paralel goroutines
+			//TODO: taka care to have N parallel downloaders at all times, if possible
+			//TODO: send requests for more peers periodically
+			//TODO: gather results and stop everything once a successful result has been found
+			peer.DownloadMetadataFromPeer(peerStr, string(infoHash))
 
 		case <-tick:
 			log.V(3).Infof("WINSTON: Tick-tack %x...\n", infoHash)

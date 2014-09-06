@@ -7,6 +7,7 @@ package peer
 
 import (
 	"fmt"
+	"io"
 	"math/rand"
 	"net"
 	"os"
@@ -26,10 +27,83 @@ func getSessionHeader(infoHash string, peerID string) []byte {
 	copy(header, bitTorrentHeader[0:])
 
 	header[25] |= 0x10 // Support Extension Protocol (BEP-0010)
-	header[27] |= 0x01 // Support DHT
+
+	// TODO: enable this again when DHT is natively supported
+	// header[27] |= 0x01 // Support DHT
 	copy(header[28:48], string2Bytes(infoHash))
 	copy(header[48:68], string2Bytes(peerID))
 	return header
+}
+
+func createPeerReader(conn net.Conn) (<-chan []byte, <-chan error) {
+	msgChan := make(chan []byte)
+	errChan := make(chan error)
+
+	go func() {
+		defer close(msgChan)
+		defer close(errChan)
+
+		for {
+			// Set a deadline for receiving the next message and refresh it before each message
+			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+
+			var n uint32
+			n, err := netReadUint32(conn)
+			if err != nil {
+				errChan <- fmt.Errorf("Could not read first byte of new message: '%s'", err)
+				break
+			}
+			if n > 130*1024 {
+				errChan <- fmt.Errorf("Received message was too large: %d", n)
+				break
+			}
+
+			var buf []byte
+			if n == 0 {
+				// keep-alive - we want an empty message
+				buf = make([]byte, 1)
+			} else {
+				buf = make([]byte, n)
+			}
+
+			_, err = io.ReadFull(conn, buf)
+			if err != nil {
+				errChan <- fmt.Errorf("Could not get the whole mssage: '%s'", err)
+			}
+			msgChan <- buf
+		}
+	}()
+
+	return msgChan, errChan
+}
+
+func createPeerWriter(conn net.Conn) (chan<- []byte, <-chan error) {
+	msgChan := make(chan []byte)
+	errChan := make(chan error)
+
+	go func() {
+		// msgChan should be closed by the calee
+		defer close(errChan)
+		defer conn.Close() // If the write channel is closed, close the connection with the peer
+
+		for msg := range msgChan {
+			// Set a deadline for sending the next message and refresh it before each message
+			conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+
+			err := netWriteUint32(conn, uint32(len(msg)))
+			if err != nil {
+				errChan <- fmt.Errorf("Could not send byte of new message: '%s'", err)
+				break
+			}
+			_, err = conn.Write(msg)
+			if err != nil {
+				errChan <- fmt.Errorf("Could not sed a  message: '%s'", err)
+				break
+			}
+		}
+	}()
+
+	return msgChan, errChan
 }
 
 func readHeader(conn net.Conn) (h []byte, err error) {
@@ -64,52 +138,66 @@ func readHeader(conn net.Conn) (h []byte, err error) {
 	return
 }
 
-// DownloadMetadataFromPeer is used to connect to the specified peer
-// and download the torrent metadata for the specified infoHash from them
-func DownloadMetadataFromPeer(remotePeer string, infoHash string) {
-	ourPeerID := getNewPeerID()
-	ourSessionHader := getSessionHeader(infoHash, ourPeerID)
-
-	log.V(2).Infof("WINSTON (peer %s): ============================================\n", ourPeerID)
-	log.V(2).Infof("WINSTON (peer %s): Connecting to %s for torrent %x...\n", ourPeerID, remotePeer, infoHash)
-	log.V(2).Infof("WINSTON (peer %s): Header %q...\n", ourPeerID, ourSessionHader)
+func initiateConnectionToPeer(remotePeer, ourPeerID, wantedInfoHash string) (theirFlags []byte, theirInfoHash, theirPeerID string, err error) {
+	ourSessionHader := getSessionHeader(wantedInfoHash, ourPeerID)
 
 	conn, err := net.DialTimeout("tcp", remotePeer, 5*time.Second)
 	if err != nil {
-		log.V(2).Infof("WINSTON (peer %s): Could not connect to peer %s: '%s'\n", ourPeerID, remotePeer, err)
+		err = fmt.Errorf("Could not connect (%s)", err)
 		return
 	}
-	log.V(2).Infof("WINSTON (peer %s): Connected to peer %s!\n", ourPeerID, remotePeer)
+	log.V(3).Infof("WINSTON (peer %s): Connected to peer %s!\n", ourPeerID, remotePeer)
+
+	// We want the connection operations to finish in the next 20 seconds
+	conn.SetDeadline(time.Now().Add(20 * time.Second))
 
 	_, err = conn.Write(ourSessionHader)
 	if err != nil {
-		log.V(2).Infof("WINSTON (peer %s): Failed to send header to peer %s :(\n", ourPeerID, remotePeer)
+		err = fmt.Errorf("Failed to send header (%s)", err)
 		return
 	}
 
 	theirHeader, err := readHeader(conn)
 	if err != nil {
-		log.V(2).Infof("WINSTON (peer %s): Error reading header for peer %s : '%s'\n", ourPeerID, remotePeer, err)
+		err = fmt.Errorf("Error reading header (%s)", err)
 		return
 	}
 
-	theirFlags := theirHeader[0:8]
-	theirInfoHash := string(theirHeader[8:28])
-	theirPeerID := string(theirHeader[28:48])
+	theirFlags = theirHeader[0:8]
+	theirInfoHash = string(theirHeader[8:28])
+	theirPeerID = string(theirHeader[28:48])
 
-	log.V(2).Infof("WINSTON (peer %s): Connection successful! Remote peer is '%s', has torrent '%x' and flags '%x'\n", ourPeerID, theirPeerID, theirInfoHash, theirFlags)
-
-	if theirInfoHash != infoHash {
-		log.V(2).Infof("WINSTON (peer %s): Error remote infohash does not match: '%x'\n", ourPeerID, theirInfoHash)
+	if theirInfoHash != wantedInfoHash {
+		err = fmt.Errorf("Remote infohash is %x", theirInfoHash)
 		return
 	}
 
 	if int(theirFlags[5])&0x10 != 0x10 {
-		log.V(2).Infof("WINSTON (peer %s): Error torrent client does not support the extension protocol\n", ourPeerID)
+		err = fmt.Errorf("Remote torrent client does not support the extension protocol; flags are %x", theirFlags)
 		return
 	}
 
-	log.V(2).Infof("WINSTON (peer %s): Happy dance!\n", ourPeerID)
+	return
+}
+
+// DownloadMetadataFromPeer is used to connect to the specified peer
+// and download the torrent metadata for the specified infoHash from them
+func DownloadMetadataFromPeer(remotePeer, infoHash string) {
+	ourPeerID := getNewPeerID()
+
+	log.V(2).Infof("WINSTON (peer %s): Connecting to %s for torrent %x\n", ourPeerID, remotePeer, infoHash)
+
+	theirFlags, theirInfoHash, theirPeerID, err := initiateConnectionToPeer(remotePeer, ourPeerID, infoHash)
+	if err != nil {
+		log.V(2).Infof("WINSTON (peer %s): Error connecting to peer %s: '%s'\n", ourPeerID, remotePeer, err)
+		return
+	}
+
+	log.V(2).Infof("WINSTON (peer %s): Connection successful! Remote peer is '%q', has torrent '%x' and flags '%x'\n", ourPeerID, theirPeerID, theirInfoHash, theirFlags)
+
+	//TODO: send extensions
+	//TODO: listen for responses
+	//TODO: send
 
 	os.Exit(1)
 }
