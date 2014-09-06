@@ -4,6 +4,7 @@
 package metadata
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -142,7 +143,17 @@ func downloadFile(infoHash dht.InfoHash, peerChannel <-chan string, eventsChanne
 			//TODO: taka care to have N parallel downloaders at all times, if possible
 			//TODO: send requests for more peers periodically
 			//TODO: gather results and stop everything once a successful result has been found
-			peer.DownloadMetadataFromPeer(peerStr, string(infoHash))
+			torrent := peer.DownloadMetadataFromPeer(peerStr, string(infoHash))
+			if torrent != nil {
+				log.V(1).Infof("WINSTON: Torrent %x really was downloaded!\n", infoHash)
+				err := saveMetaInfo(string(infoHash), torrent)
+				if err != nil {
+					panic(fmt.Errorf("Could not save a simple file: %s", err))
+				}
+				os.Exit(0)
+			} else {
+				log.V(1).Infof("WINSTON: Torrent %x was not downloaded, trying again...\n", infoHash)
+			}
 
 		case <-tick:
 			log.V(3).Infof("WINSTON: Tick-tack %x...\n", infoHash)

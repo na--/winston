@@ -1,5 +1,13 @@
 package metadata
 
+import (
+	"flag"
+	"fmt"
+	"os"
+)
+
+var outputFolder = flag.String("output_folder", "./tmp/", "Folder where you want to save the downloaded torrent files.")
+
 // This function accepts found peers in bulk through the in channel, buffers them
 // and passes them one by one to the out channel
 func makePeerBuffer(in <-chan []string) <-chan string {
@@ -38,4 +46,31 @@ func makePeerBuffer(in <-chan []string) <-chan string {
 	}()
 
 	return out
+}
+
+func saveMetaInfo(infoHash string, metadata []byte) (err error) {
+
+	err = os.MkdirAll(*outputFolder, os.ModeDir|os.ModePerm)
+	if err != nil {
+		err = fmt.Errorf("Could not create folder '%s': %s", *outputFolder, err)
+		return
+	}
+
+	f, err := os.Create(fmt.Sprintf("%s/%x.torrent", *outputFolder, infoHash))
+	if err != nil {
+		err = fmt.Errorf("Error when opening file for creation: %s", err)
+		return
+	}
+	defer f.Close()
+
+	//TODO: more metadata; better meta-metainfo saving; better error handling
+	f.WriteString("d4:info")
+	_, err = f.Write(metadata)
+	if err != nil {
+		err = fmt.Errorf("Error when saving torrent file: %s", err)
+		return
+	}
+	f.WriteString("e")
+
+	return
 }

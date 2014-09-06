@@ -240,6 +240,8 @@ func receiveMetadataPiece(expectedMetadataPiece int, receivedMetadata, msg []byt
 		return
 	}
 
+	log.V(2).Infof("WINSTON: Received metadata piece #%d with size %d!\n", message.Piece, pieceSize)
+
 	copy(receivedMetadata[pieceStartPos:pieceStartPos+pieceSize], piece.Bytes())
 
 	return

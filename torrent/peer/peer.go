@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"time"
 
 	log "github.com/golang/glog"
@@ -21,7 +20,7 @@ func createPeerReader(conn net.Conn) (<-chan []byte, <-chan error) {
 	errChan := make(chan error)
 
 	go func() {
-		defer log.V(2).Infof("WINSTON: Peer reader goroutine exited\n")
+		defer log.V(3).Infof("WINSTON: Peer reader goroutine exited\n")
 
 		defer close(msgChan)
 		defer close(errChan)
@@ -65,7 +64,7 @@ func createPeerWriter(conn net.Conn) (chan<- []byte, <-chan error) {
 	errChan := make(chan error)
 
 	go func() {
-		defer log.V(2).Infof("WINSTON: Peer writer goroutine exited\n")
+		defer log.V(3).Infof("WINSTON: Peer writer goroutine exited\n")
 		defer close(errChan)
 		// msgChan should be closed by the caller
 
@@ -91,7 +90,7 @@ func createPeerWriter(conn net.Conn) (chan<- []byte, <-chan error) {
 
 // DownloadMetadataFromPeer is used to connect to the specified peer
 // and download the torrent metadata for the specified infoHash from them
-func DownloadMetadataFromPeer(remotePeer, infoHash string) {
+func DownloadMetadataFromPeer(remotePeer, infoHash string) (downloadedTorrent []byte) {
 	ourPeerID := getNewPeerID()
 
 	log.V(2).Infof("WINSTON (peer %s): Connecting to %s for torrent %x\n", ourPeerID, remotePeer, infoHash)
@@ -181,10 +180,9 @@ func DownloadMetadataFromPeer(remotePeer, infoHash string) {
 				actualHash := string(sha.Sum(nil))
 				if actualHash != infoHash {
 					log.V(2).Infof("WINSTON (peer %s): Received invalid metadata from %s: received %x, expected %x\n", ourPeerID, remotePeer, actualHash, infoHash)
-					os.Exit(1) //TODO: remove
 				} else {
 					log.V(1).Infof("WINSTON (peer %s): SUCCESSFULLY DOWNLOADED %x from %s\n", ourPeerID, infoHash, remotePeer)
-					os.Exit(1) //TODO: remove
+					downloadedTorrent = receivedMetadata
 				}
 				return
 			}
