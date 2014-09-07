@@ -44,6 +44,7 @@ Roadmap
 -------
 
 1. Finish the simple command-line version
+    - CI: essential unit tests and travis build
     - Optimize parallel downloads
     - Improve timeout handling
     - Implement better DHT processing (asking for more peers, better library usage, etc.)
@@ -57,9 +58,11 @@ Roadmap
     - Show download progress and status for the added hashes
     - Add functionality for parsing the downloaded torrent metadata files
     - Add functionality for searching in the torrent metadata
+    - Imrpove exported lib interfaces
 3. Create a DHT-listening active search engine
     - Use multiple long-running DHT nodes for actively listening to the DHT network
     - Implement other parts of BEP09 and send known metadata to other nodes (help the network)
+    - Add integration tests for getting/receiving metadata
     - When one of the nodes finds out an unknown infoHash, winston will attempt to download it
 4. Scrapers for augmenting the torrent infodata
     - Scrape normal http torrent directories
@@ -73,6 +76,8 @@ Libraries
 You can use some of Winston's publicly exported library functions for your own projects:
 * http://godoc.org/github.com/na--/winston/torrent/metadata
 * http://godoc.org/github.com/na--/winston/torrent/peer
+
+Important note: the exported interfaces are not stable and will very likely change in the next versions.
 
 Credits
 -------
