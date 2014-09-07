@@ -63,7 +63,6 @@ func downloadManager(d *dht.DHT, filesToDownload <-chan string, finished chan<- 
 			if err != nil {
 				//TODO: better error handling
 				log.Errorf("WINSTON: DecodeInfoHash error: %v\n", err)
-				os.Exit(1)
 			}
 
 			if _, ok := currentDownloads[newFile]; ok {
@@ -150,10 +149,11 @@ func downloadFile(infoHash dht.InfoHash, peerChannel <-chan string, eventsChanne
 				if err != nil {
 					panic(fmt.Errorf("Could not save a simple file: %s", err))
 				}
-				os.Exit(0)
-			} else {
-				log.V(1).Infof("WINSTON: Torrent %x was not downloaded, trying again...\n", infoHash)
+				eventsChannel <- downloadEvent{infoHash, eventSucessfulDownload}
+				return
 			}
+
+			log.V(1).Infof("WINSTON: Torrent %x was not downloaded, trying again...\n", infoHash)
 
 		case <-tick:
 			log.V(3).Infof("WINSTON: Tick-tack %x...\n", infoHash)
